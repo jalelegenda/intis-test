@@ -6,17 +6,13 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
+from src.data.models import User
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 app = FastAPI()
-
-
-class User(BaseModel):
-    id: str
-    username: str
-    password: str
 
 
 class Token(BaseModel):
