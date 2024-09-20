@@ -1,7 +1,10 @@
 from datetime import date, datetime
+from functools import lru_cache
+from typing import Literal
+from uuid import UUID, uuid4
 
 from cuid2 import Cuid
-from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint, create_engine
+from sqlmodel import Constraint, Field, ForeignKeyConstraint, Relationship, SQLModel, UniqueConstraint, create_engine
 
 CUID = Cuid(length=32)
 
@@ -38,7 +41,7 @@ class Apartment(SQLModel, table=True):
     bookings: list["Booking"] = Relationship(back_populates="apartment")
     cleaning_dates: list["CleaningDate"] = Relationship(back_populates="apartments", link_model=ApartmentCleaningDateLink)
 
-
+    
 class CleaningDate(SQLModel, table=True):
     id: str | None = Field(primary_key=True, default_factory=CUID.generate)
     date: date
@@ -51,5 +54,11 @@ class Booking(SQLModel, table=True):
     start_date: datetime
     end_date: datetime
 
-    apartment_id: str = Field(foreign_key="apartment.id")
+    apartment_id: str | None = Field(foreign_key="apartment.id", nullable=False)
     apartment: Apartment = Relationship(back_populates="bookings")
+
+
+class CalendarFile(SQLModel):
+    id: UUID = Field(primary_key=True, default_factory=uuid4)
+    source: Literal["disk", "url"]
+    url: str

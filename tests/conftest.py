@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest
-from src.entrypoint.server import app as server
+from src.web.server import app as server
 
 
 @pytest.fixture(scope="session")

@@ -1,12 +1,14 @@
 from typing import Annotated, ClassVar, Self
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-from src.data.models import User
+from src.data.entity import User
+from src.web.parser import Calendar
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -62,6 +64,7 @@ async def get_logged_in_user(token: Annotated[str, Depends(oauth2_scheme)]) -> U
     )
     try:
         decoded_token = Token.from_encoded(token)
+        print(decoded_token)
     except jwt.InvalidTokenError:
         raise exception
     user = await get_user(decoded_token.username)
@@ -85,3 +88,15 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> s
 @app.get("/")
 async def index(user: Annotated[User, Depends(get_logged_in_user)]) -> str:
     return "test"
+
+
+@app.post("/import-calendar")
+async def import_calendar(
+    user: Annotated[User, Depends(get_logged_in_user)],
+    file: UploadFile,
+) -> JSONResponse:
+    calendar = Calendar.parse(file.file, file.filename, "form")
+
+    return JSONResponse(content="File uploaded", status_code=200)
+
+

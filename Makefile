@@ -1,7 +1,7 @@
 .PHONY = run-dev
 
 run-dev:
-	poetry run uvicorn src.entrypoint.server:app --reload
+	poetry run uvicorn src.web.server:app --reload
 
 test:
 	poetry run pytest -vv -s
@@ -15,6 +15,9 @@ revision:
 		exit 1; \
 	fi
 	poetry run alembic revision --autogenerate -m "$(NAME)"
+
+downgrade:
+	poetry run alembic downgrade -1
 
 push_db: revision migrate
 

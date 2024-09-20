@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
 
-from src.entrypoint.server import Token, User
+from src.web.server import Token, User
 from tests.factories import UserFactory
 
 
@@ -15,7 +15,7 @@ def user() -> User:
 async def test_login_endpoint_success(
     api_client: AsyncClient, mocker: MockerFixture, user: User
 ) -> None:
-    mocker.patch("src.entrypoint.server.authenticate_user", return_value=user)
+    mocker.patch("src.web.server.authenticate_user", return_value=user)
     mocker.patch.object(Token, "produce", return_value="success")
     response = await api_client.post("/login", data=user.model_dump())
     assert response.status_code == 200
@@ -26,7 +26,7 @@ async def test_login_endpoint_success(
 async def test_login_endpoint_unauthorized(
     api_client: AsyncClient, mocker: MockerFixture
 ) -> None:
-    mocker.patch("src.entrypoint.server.authenticate_user", return_value=None)
+    mocker.patch("src.web.server.authenticate_user", return_value=None)
     response = await api_client.post(
         "/login", data={"username": "intis", "password": "password"}
     )

@@ -1,4 +1,4 @@
-from src.entrypoint.server import Token
+from src.web.server import Token
 
 
 def test_token_methods() -> None:
