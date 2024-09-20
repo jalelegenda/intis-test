@@ -44,3 +44,5 @@ filterwarnings = "ignore::DeprecationWarning:passlib.*"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[mypy]
+plugins = "pydantic.mypy"

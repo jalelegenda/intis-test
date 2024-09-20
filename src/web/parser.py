@@ -1,5 +1,5 @@
 import hashlib
-from typing import BinaryIO, Literal
+from typing import BinaryIO, Literal, Self
 
 from ics import Calendar as iCalendar
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ class Calendar(BaseModel):
         file: BinaryIO,
         filename: str | None,
         source: Literal["form", "url"],
-    ):
+    ) -> Self:
         return cls(
             sha=cls.get_file_hash(file),
             filename=filename,

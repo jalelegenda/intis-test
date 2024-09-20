@@ -22,5 +22,3 @@ async def api_client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
         },
     ) as client:
         yield client
-
-

@@ -95,8 +95,5 @@ async def import_calendar(
     user: Annotated[User, Depends(get_logged_in_user)],
     file: UploadFile,
 ) -> JSONResponse:
-    calendar = Calendar.parse(file.file, file.filename, "form")
-
+    calendar = Calendar.parse(file.file, file.filename, "form")  # noqa: F841
     return JSONResponse(content="File uploaded", status_code=200)
-
-

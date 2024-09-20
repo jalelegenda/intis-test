@@ -20,4 +20,3 @@ downgrade:
 	poetry run alembic downgrade -1
 
 push_db: revision migrate
-
