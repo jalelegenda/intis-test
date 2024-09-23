@@ -6,8 +6,11 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.data.entity import User
+from src.data.entity import Apartment, User
+from src.settings import DB_STRING
 from src.web.parser import Calendar
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -15,6 +18,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 app = FastAPI()
+
+db_engine = create_async_engine(DB_STRING)
 
 
 class Token(BaseModel):
@@ -64,7 +69,6 @@ async def get_logged_in_user(token: Annotated[str, Depends(oauth2_scheme)]) -> U
     )
     try:
         decoded_token = Token.from_encoded(token)
-        print(decoded_token)
     except jwt.InvalidTokenError:
         raise exception
     user = await get_user(decoded_token.username)
@@ -86,7 +90,7 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> s
 
 
 @app.get("/")
-async def index(user: Annotated[User, Depends(get_logged_in_user)]) -> str:
+async def index() -> str:
     return "test"
 
 
@@ -96,4 +100,9 @@ async def import_calendar(
     file: UploadFile,
 ) -> JSONResponse:
     calendar = Calendar.parse(file.file, file.filename, "form")  # noqa: F841
-    return JSONResponse(content="File uploaded", status_code=200)
+
+    async with AsyncSession(db_engine) as session:
+        async with session.begin():
+            apartment = await Apartment.prepare(session, calendar.apartment_no, user.id)
+            await apartment.set_schedule(session, calendar.bookings)
+        return JSONResponse(content="File uploaded", status_code=200)

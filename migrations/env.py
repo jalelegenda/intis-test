@@ -1,13 +1,13 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from sqlmodel import SQLModel
-from alembic import context
-from src.data.entity import Apartment, Booking, CleaningDate, User  # noqa: F401
+
+from src.data.entity import Apartment, Booking, CalendarFile, User  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

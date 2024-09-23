@@ -8,7 +8,7 @@ from tests.factories import UserFactory
 
 @pytest.fixture(scope="module")
 def user() -> User:
-    return UserFactory().build()
+    return UserFactory.build()
 
 
 @pytest.mark.asyncio
