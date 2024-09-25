@@ -21,6 +21,7 @@ class Booking(BaseValue):
     end_date: date
     cleaning_deadline: date | None = None
     cleaning_date: date | None = None
+    summary: str | None
 
     @model_validator(mode="after")
     def date_consistency(self) -> Self:

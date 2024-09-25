@@ -1,7 +1,7 @@
 from polyfactory.factories.pydantic_factory import ModelFactory
 
 from src.data.entity import Apartment
-from src.web.server import User
+from src.web.app import User
 
 
 class UserFactory(ModelFactory[User]): ...

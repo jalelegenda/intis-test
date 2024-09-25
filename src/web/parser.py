@@ -1,11 +1,13 @@
 from dataclasses import dataclass, field
-import hashlib
 from datetime import date
 from itertools import zip_longest
-from typing import BinaryIO, Literal, Self
+from typing import BinaryIO, Self
 
 from ics import Calendar as iCalendar
+from ics import Event
+from ics.event import Arrow
 
+from src.data.entity import Apartment
 from src.data.value import Booking
 
 
@@ -14,9 +16,7 @@ class ParserError(Exception): ...
 
 @dataclass
 class Calendar:
-    sha: str
     filename: str | None
-    source: Literal["form", "url"]
     apartment_no: int
     url: str | None = None
     bookings: list[Booking] = field(default_factory=list)
@@ -25,19 +25,32 @@ class Calendar:
     @classmethod
     def parse(
         cls,
-        file: BinaryIO,
+        file: bytes | BinaryIO,
         filename: str | None,
-        source: Literal["form", "url"],
     ) -> Self:
+        if isinstance(file, BinaryIO):
+            file = file.read()
         icalendar = cls.get_icalendar(file)
 
         return cls(
-            sha=cls.get_file_hash(file),
             filename=filename,
-            source=source,
             apartment_no=cls.get_apartment_no(filename),
             bookings=cls.extract_dates(icalendar),
         )
+
+    @staticmethod
+    def export(
+        apartment: Apartment,
+    ) -> tuple[str, bytes]:
+        calendar = iCalendar()
+        for booking in apartment.bookings:
+            event = Event()
+            event.uid = booking.id
+            event.description = booking.guest_name
+            event.begin = Arrow.fromdate(booking.start_date)
+            event.end = Arrow.fromdate(booking.end_date)
+            calendar.events.add(event)
+        return f"apartment_{apartment.number}.ics", calendar.serialize().encode()
 
     @staticmethod
     def extract_dates(icalendar: iCalendar) -> list[Booking]:
@@ -49,20 +62,10 @@ class Calendar:
                     start_date=event.begin.date(),
                     end_date=event.end.date(),
                     cleaning_deadline=next_event.begin.date() if next_event else None,
+                    summary=event.description and str(event.description),
                 )
             )
         return bookings
-
-    @staticmethod
-    def get_file_hash(file: BinaryIO) -> str:
-        blocksize = 65536  # 64kb
-        buf = file.read(blocksize)
-        hasher = hashlib.sha1()
-        while buf:
-            hasher.update(buf)
-            buf = file.read(blocksize)
-
-        return hasher.hexdigest()
 
     @staticmethod
     def get_apartment_no(filename: str | None) -> int:
@@ -78,5 +81,5 @@ class Calendar:
             raise error from e
 
     @staticmethod
-    def get_icalendar(file: BinaryIO) -> iCalendar:
-        return iCalendar(file.read().decode())
+    def get_icalendar(file: bytes) -> iCalendar:
+        return iCalendar(file.decode())

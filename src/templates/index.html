@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apartment Schedules</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        h2 {
+            color: #008CBA;
+            margin-top: 30px;
+        }
+        .table-container {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #ddd;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        .checkin {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .checkout {
+            background-color: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Apartment Schedules</h1>
+    
+    {% for apartment in apartments %}
+    <h2>Apartment {{ apartment.apartment_no }}</h2>
+    <div class="table-container">
+        <table>
+            <tr>
+                <th>Date</th>
+                <th>Status</th>
+            </tr>
+            {% for date, status in apartment.schedule.items() %}
+            <tr>
+                <td>{{ date }}</td>
+                <td>
+                    {% if status %}
+                        {% for item in status %}
+                            <span class="status {{ item.lower() }}">{{ item }}</span>
+                        {% endfor %}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endfor %}
+</body>
+</html>

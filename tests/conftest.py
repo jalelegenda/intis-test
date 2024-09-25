@@ -2,12 +2,12 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest
-from src.web.server import app as server
+from src.web.app import app as application
 
 
 @pytest.fixture(scope="session")
-def app() -> FastAPI:
-    return server
+async def app() -> FastAPI:
+    return application
 
 
 @pytest.fixture

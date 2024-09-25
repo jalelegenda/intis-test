@@ -1,7 +1,7 @@
 .PHONY = run-dev
 
 run-dev:
-	poetry run uvicorn src.web.server:app --reload
+	poetry run uvicorn src.web.app:app --reload
 
 test:
 	poetry run pytest -vv -s

@@ -1,6 +1,5 @@
 from datetime import UTC, date, datetime
-from enum import auto
-from typing import NamedTuple, Self, Sequence, cast
+from typing import NamedTuple, Self, Sequence, Union, cast
 
 from cuid2 import Cuid
 from dateutil.relativedelta import relativedelta
@@ -13,13 +12,10 @@ from sqlmodel import (
     Index,
     Relationship,
     SQLModel,
-    UniqueConstraint,
     delete,
     select,
-    text,
 )
 from sqlmodel.ext.asyncio.session import AsyncSession
-from strenum import StrEnum
 
 from src.data.value import Booking as BookingValue
 
@@ -33,11 +29,6 @@ class DayInfo(NamedTuple):
 
     def __bool__(self) -> bool:
         return len(self.bookings) > 0
-
-
-class FileSource(StrEnum):
-    DISK = auto()
-    URL = auto()
 
 
 def timezoned() -> datetime:
@@ -58,6 +49,20 @@ class User(SQLModel, table=True):
 
     apartments: list["Apartment"] = Relationship(back_populates="user")
 
+    @classmethod
+    async def create(cls, session: AsyncSession, username: str, password: str) -> Self:
+        user = cls(username=username, password=password)
+        session.add(user)
+        return user
+
+    @staticmethod
+    async def get_by_username(
+        session: AsyncSession, username: str
+    ) -> Union["User", None]:
+        return (
+            await session.exec(select(User).where(User.username == username))
+        ).one_or_none()
+
 
 class Booking(SQLModel, table=True):
     __table_args__ = (
@@ -69,6 +74,7 @@ class Booking(SQLModel, table=True):
     end_date: date
     cleaning_deadline: date | None = None
     cleaning_date: date | None = None
+    guest_name: str | None = None
     created_at: datetime = timezoned()
     updated_at: datetime = timezoned()
 
@@ -78,88 +84,69 @@ class Booking(SQLModel, table=True):
     async def get_overlapping_bookings(
         self, session: AsyncSession, apartment_id: str
     ) -> Sequence["Booking"]:
-        # TODO: Make the commented code work to discard code after it
-
-        # overlapping: Sequence[Booking] = (
-        #     overlaps will not work for some reason
-        #     will debug 10 years from now
-        #     await session.exec(
-        #         select(Booking)
-        #         .join(Apartment)
-        #         .join(User)
-        #         .where(
-        #             Range(
-        #                 lower=new_booking.end_date,
-        #                 upper=new_booking.cleaning_deadline,
-        #                 bounds="[]",
-        #             ).overlaps(Range(Booking.end_date, Booking.cleaning_deadline))
-        #             Apartment.number != calendar.apartment_no
-        #             and user.id == User.id
-        #         )
-        #     )
-        # ).all()
-        sql = select(Booking).from_statement(self.get_sql())
-        results = await session.exec(  # type: ignore[no-overload]
-            statement=sql,  # type: ignore[arg-type]
-            params={
-                "end_date": self.end_date,
-                "cleaning_deadline": self.cleaning_deadline,
-                "apartment_id": apartment_id,
-            },
-        )
-        return results.scalars()
-
-    @staticmethod
-    def get_sql():
-        sql = text(
-            """
-            SELECT * FROM booking b
-            JOIN apartment a
-            ON a.id = b.apartment_id
-            WHERE (b.end_date , b.cleaning_deadline) OVERLAPS (:end_date, :cleaning_deadline)
-                   AND a.id != :apartment_id
-            """
-        )
-        sql = sql.columns(
-            Booking.id,  # type: ignore[arg-type]
-            Booking.start_date,  # type: ignore[arg-type]
-            Booking.end_date,  # type: ignore[arg-type]
-            Booking.cleaning_deadline,  # type: ignore[arg-type]
-            Booking.cleaning_date,  # type: ignore[arg-type]
-            Booking.apartment_id,  # type: ignore[arg-type]
-        )
-        return sql
+        return (
+            await session.exec(
+                select(Booking)
+                .join(Apartment)
+                .where(
+                    self.start_date >= Booking.end_date
+                    and self.end_date < Booking.start_date
+                    and Apartment.id == apartment_id
+                )
+            )
+        ).all()
 
 
 class Apartment(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("user_id", "number"),)
-
-    id: str = Field(primary_key=True, default_factory=CUID.generate)
+    id: str
     number: int
     description: str | None = None
-    created_at: datetime = timezoned()
     updated_at: datetime = timezoned()
 
     user_id: str = Field(foreign_key="user.id")
     user: User = Relationship(back_populates="apartments")
     bookings: list[Booking] = Relationship(back_populates="apartment")
 
+    @staticmethod
+    def make_id(user_id: str, number: int | str) -> str:
+        return f"{user_id}.{number}"
+
     @classmethod
-    async def prepare(cls, session: AsyncSession, number: int, user_id: str) -> Self:
+    async def get(
+        cls, session: AsyncSession, number: int | str, user_id: str
+    ) -> Self | None:
+        apartment = await session.exec(
+            select(cls)
+            .join(Booking)
+            .options(contains_eager(cls.bookings))  # type: ignore[arg-type]
+            .where(cls.id == cls.make_id(user_id, number))
+            .order_by(Booking.start_date)  # type: ignore[arg-type]
+        )
+        return apartment.one_or_none()
+
+    @classmethod
+    async def prepare(
+        cls,
+        session: AsyncSession,
+        number: int,
+        user_id: str,
+    ) -> Self:
         apartment = (
             (
                 await session.exec(
                     select(cls)
                     .join(Booking)
                     .options(contains_eager(cls.bookings))  # type: ignore[arg-type]
-                    .where(cls.number == number and cls.user_id == user_id)
+                    .where(cls.id == cls.make_id(user_id, number))
                 )
             )
             .unique()
             .one_or_none()
         )
         if not apartment:
-            apartment = cls(number=number, user_id=user_id)
+            apartment = cls(
+                id=cls.make_id(user_id, number), number=number, user_id=user_id
+            )
             session.add(apartment)
         else:
             await apartment.delete_own_bookings(session)
@@ -176,8 +163,8 @@ class Apartment(SQLModel, table=True):
             overlapping = tuple(
                 await new_booking.get_overlapping_bookings(session, self.id)
             )
-            # TODO: Optimization check on existing bookings' cleaning_dates
-            # TODO: Optimization: cache dates
+            # idea: Optimization check on existing bookings' cleaning_dates
+            # idea: Optimization: cache dates
             best: DayInfo | None = None
             for ddate in rrule(
                 DAILY,
@@ -206,16 +193,30 @@ class Apartment(SQLModel, table=True):
                     b.cleaning_date = best.date
                     session.add(b)
 
+    @staticmethod
+    async def list(
+        session: AsyncSession,
+        user_id: str,
+        from_date: date | None = None,
+        to_date: date | None = None,
+    ) -> list["Apartment"]:
+        statement = (
+            select(Apartment).join(Booking).options(contains_eager(Apartment.bookings))  # type: ignore[arg-type]
+        )
+
+        if from_date:
+            statement = statement.where(Booking.end_date >= from_date)
+        if to_date:
+            statement = statement.where(Booking.start_date < to_date)
+
+        statement = statement.where(Apartment.user_id == user_id).order_by(
+            Booking.start_date  # type: ignore[arg-type]
+        )
+
+        result = await session.exec(statement)
+        return list(result.all())
+
     async def delete_own_bookings(self, session: AsyncSession) -> None:
         await session.exec(  # type: ignore[no-overload]
             delete(Booking).where(Booking.apartment_id == self.id)  # type: ignore[arg-type]
         )
-
-
-class CalendarFile(SQLModel, table=True):
-    url: str = Field(primary_key=True)
-    source: FileSource
-    sha: str
-
-    created_at: datetime = timezoned()
-    updated_at: datetime = timezoned()
