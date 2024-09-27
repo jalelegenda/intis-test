@@ -1,8 +1,11 @@
-from typing import Annotated, ClassVar, cast
+from typing import Annotated, ClassVar
 
 import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import (
+    HTTPBearer,
+    OAuth2PasswordBearer,
+)
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -12,7 +15,7 @@ from src.data.entity import User
 from src.web.dependencies import db_manager
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/security/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 class Token(BaseModel):
@@ -23,7 +26,11 @@ class Token(BaseModel):
 class UserDoesNotExistError(HTTPException): ...
 
 
+class TokenDecodeFailure(HTTPException): ...
+
+
 class LoginManager:
+    SCHEME: ClassVar = HTTPBearer()
     ALGORITHM: ClassVar = "HS256"
 
     def __init__(self, secret: str, token_expiration: str):
@@ -61,34 +68,40 @@ class LoginManager:
         session: Annotated[AsyncSession, Depends(db_manager)],
         token: Annotated[str, Depends(oauth2_scheme)],
     ) -> User:
-        exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        exception = {
+            "status_code": status.HTTP_401_UNAUTHORIZED,
+            "headers": {"WWW-Authenticate": "Bearer"},
+        }
         try:
             decoded_token = self.decode_token(token)
         except jwt.InvalidTokenError:
-            exception.detail = "Cannot process token"
-            raise exception
+            raise TokenDecodeFailure(detail="Cannot process token", **exception)
         user = await User.get_by_username(session, decoded_token.username)
         if not user:
-            exception.detail = "User does not exist"
-            raise cast(UserDoesNotExistError, exception)
+            print("no user")
+            raise UserDoesNotExistError(detail="User does not exist", **exception)
         return user
 
-    async def get_user(
+    async def authenticator(
         self,
+        request: Request,
         session: Annotated[AsyncSession, Depends(db_manager)],
-        token: Annotated[str, Depends(oauth2_scheme)],
-    ) -> User | None:
-        try:
-            user = await self(session, token)
-        except UserDoesNotExistError:
-            return None
-        return user
+    ):
+        exception = HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+        token = request.cookies.get("access_token")
+        if not token:
+            raise exception
+        scheme, _, encoded = token.partition(" ")
+        if scheme != "Bearer":
+            raise exception
+        return await self(session, encoded)
 
 
 login_manager = LoginManager(
     secret=settings.TOKEN_SECRET,
     token_expiration=settings.TOKEN_EXPIRATION,
 )
+
+
+def get_login_manager() -> LoginManager:
+    return login_manager

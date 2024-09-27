@@ -2,7 +2,6 @@ from datetime import UTC, date, datetime
 from typing import NamedTuple, Self, Sequence, Union, cast
 
 from cuid2 import Cuid
-from dateutil.relativedelta import relativedelta
 from dateutil.rrule import DAILY, rrule
 from sqlalchemy.orm import contains_eager
 from sqlmodel import (
@@ -93,12 +92,13 @@ class Booking(SQLModel, table=True):
                     and self.end_date < Booking.start_date
                     and Apartment.id == apartment_id
                 )
+                .with_for_update()
             )
         ).all()
 
 
 class Apartment(SQLModel, table=True):
-    id: str
+    id: str = Field(primary_key=True)
     number: int
     description: str | None = None
     updated_at: datetime = timezoned()
@@ -159,39 +159,67 @@ class Apartment(SQLModel, table=True):
         # TODO: Can be broken down into two functions; one iterates, other determines date for single booking
         for booking in bookings:
             new_booking = Booking(**booking.model_dump(), apartment=self)
-            # TODO: need to lock the table to prevent race condition errors on import
             overlapping = tuple(
                 await new_booking.get_overlapping_bookings(session, self.id)
             )
-            # idea: Optimization check on existing bookings' cleaning_dates
-            # idea: Optimization: cache dates
-            best: DayInfo | None = None
-            for ddate in rrule(
-                DAILY,
-                dtstart=new_booking.end_date,
-                until=new_booking.cleaning_deadline
-                or (
-                    new_booking.end_date + relativedelta(months=1)
-                ),  # Must be a better way to do this fallback
-            ):
-                day = ddate.date()
-                bookings_vacant_on_ddate = {
-                    b.id: b
-                    for b in overlapping
-                    if b.end_date <= day <= (b.cleaning_deadline or date(3000, 1, 1))
-                }
-                day_info = DayInfo(
-                    len(bookings_vacant_on_ddate), day, bookings_vacant_on_ddate
-                )
-                if not best or (len(best.bookings) < len(day_info.bookings)):
-                    best = day_info
-            if not best:
-                new_booking.cleaning_date = new_booking.end_date  # clean the room ASAP
-                session.add(new_booking)
-            else:
-                for b in (*best.bookings.values(), new_booking):
-                    b.cleaning_date = best.date
-                    session.add(b)
+            best = self.determine_best_cleaning_date(new_booking, overlapping)
+            self.assign_cleaning_date(session, new_booking, best)
+
+    @staticmethod
+    def determine_best_cleaning_date(
+        booking: Booking, overlapping: tuple[Booking, ...]
+    ) -> DayInfo | None:
+        best: DayInfo | None = None
+        if not overlapping:
+            return best
+        deadlines = [
+            o.cleaning_deadline for o in overlapping if o.cleaning_deadline is not None
+        ]
+        furthest_deadline = None
+        if deadlines:
+            furthest_deadline = max(deadlines)
+        for ddate in rrule(
+            DAILY,
+            dtstart=booking.end_date,
+            until=(
+                booking.cleaning_deadline
+                or furthest_deadline
+                or max(
+                    (
+                        o.end_date
+                        for o in (
+                            *overlapping,
+                            booking,
+                        )  # leave this to minimize performance hit
+                    )
+                )  # fallback to latest checkout
+            ),
+        ):
+            day = ddate.date()
+            bookings_vacant_on_ddate = {
+                b.id: b
+                for b in overlapping
+                if b.end_date <= day <= (b.cleaning_deadline or date(3000, 1, 1))
+            }
+            day_info = DayInfo(
+                len(bookings_vacant_on_ddate), day, bookings_vacant_on_ddate
+            )
+            if not best or (len(best.bookings) < len(day_info.bookings)):
+                best = day_info
+
+        return best
+
+    @staticmethod
+    def assign_cleaning_date(
+        session: AsyncSession, booking: Booking, best: DayInfo | None
+    ) -> None:
+        if not best:
+            booking.cleaning_date = booking.end_date  # clean the room ASAP
+            session.add(booking)
+        else:
+            for b in (*best.bookings.values(), booking):
+                b.cleaning_date = best.date
+                session.add(b)
 
     @staticmethod
     async def list(
@@ -214,7 +242,7 @@ class Apartment(SQLModel, table=True):
         )
 
         result = await session.exec(statement)
-        return list(result.all())
+        return list(result.unique().all())
 
     async def delete_own_bookings(self, session: AsyncSession) -> None:
         await session.exec(  # type: ignore[no-overload]

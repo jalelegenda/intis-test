@@ -13,7 +13,7 @@ class DbManager:
 
     async def __call__(self) -> AsyncGenerator[AsyncSession, None]:
         if self.session is None:
-            self.session = AsyncSession(self.engine)
+            self.session = AsyncSession(self.engine, expire_on_commit=False)
 
         yield self.session
         await self.session.commit()

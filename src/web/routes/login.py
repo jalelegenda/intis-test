@@ -6,19 +6,15 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.data.entity import User
-from src.web.auth import LoginManager, login_manager
+from src.web.auth import LoginManager, get_login_manager
 from src.web.dependencies import db_manager
 
 router = APIRouter()
 
 
-def loginmanager() -> LoginManager:
-    return login_manager
-
-
 @router.post("/login")
 async def login(
-    login: Annotated[LoginManager, Depends(loginmanager)],
+    login: Annotated[LoginManager, Depends(get_login_manager)],
     session: Annotated[AsyncSession, Depends(db_manager)],
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> str:
@@ -36,12 +32,10 @@ async def login(
 
 @router.post("/register")
 async def register(
-    login: Annotated[LoginManager, Depends(loginmanager)],
+    login: Annotated[LoginManager, Depends(get_login_manager)],
     session: Annotated[AsyncSession, Depends(db_manager)],
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    form: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> JSONResponse:
-    password_hash = login.hash_password(form_data.password)
-    user = await User.create(session, form_data.username, password_hash)
-    return JSONResponse(
-        content={"username": user.username, "password": form_data.password}
-    )
+    password_hash = login.hash_password(form.password)
+    user = await User.create(session, form.username, password_hash)
+    return JSONResponse(content={"username": user.username, "password": form.password})

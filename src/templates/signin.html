@@ -19,6 +19,27 @@
             padding: 20px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 300px; /* Set a fixed width for the form */
+        }
+        .tab {
+            display: flex;
+            cursor: pointer;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab button {
+            border: none;
+            background: none;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            outline: none;
+            transition: border-bottom 0.3s;
+        }
+        .tab button.active {
+            border-bottom: 2px solid #4CAF50;
+            font-weight: bold;
         }
         .form-group {
             margin-bottom: 15px;
@@ -33,15 +54,12 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
-        .button-group {
-            display: flex;
-            justify-content: space-between;
-        }
         button {
             padding: 10px 15px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            width: 100%;
         }
         .sign-in {
             background-color: #4CAF50;
@@ -51,11 +69,19 @@
             background-color: #008CBA;
             color: white;
         }
+        .hidden {
+            display: none; /* Hide inactive forms */
+        }
     </style>
 </head>
 <body>
     <div class="form-container">
-        <form id="auth-form">
+        <div class="tab">
+            <button class="active" onclick="showForm('sign-in')">Sign In</button>
+            <button onclick="showForm('register')">Register</button>
+        </div>
+
+        <form id="sign-in-form" action="/signin" method="POST">
             <div class="form-group">
                 <label for="username">Username:</label>
                 <input type="text" id="username" name="username" required>
@@ -64,19 +90,40 @@
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>
             </div>
-            <div class="button-group">
-                <button type="button" class="sign-in" onclick="submitForm('/signin')">Sign In</button>
-                <button type="button" class="register" onclick="submitForm('/register')">Register</button>
+            <button type="submit" class="sign-in">Sign In</button>
+        </form>
+
+        <form id="register-form" class="hidden" action="/register" method="POST">
+            <div class="form-group">
+                <label for="register-username">Username:</label>
+                <input type="text" id="register-username" name="username" required>
             </div>
+            <div class="form-group">
+                <label for="register-password">Password:</label>
+                <input type="password" id="register-password" name="password" required>
+            </div>
+            <button type="submit" class="register">Register</button>
         </form>
     </div>
 
     <script>
-        function submitForm(url) {
-            const form = document.getElementById('auth-form');
-            form.action = url;
-            form.method = 'post';
-            form.submit();
+        function showForm(form) {
+            const signInForm = document.getElementById('sign-in-form');
+            const registerForm = document.getElementById('register-form');
+            const signInButton = document.querySelector('.tab button:nth-child(1)');
+            const registerButton = document.querySelector('.tab button:nth-child(2)');
+
+            if (form === 'sign-in') {
+                signInForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                signInButton.classList.add('active');
+                registerButton.classList.remove('active');
+            } else {
+                registerForm.classList.remove('hidden');
+                signInForm.classList.add('hidden');
+                registerButton.classList.add('active');
+                signInButton.classList.remove('active');
+            }
         }
     </script>
 </body>

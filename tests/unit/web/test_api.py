@@ -1,40 +1,39 @@
+from unittest.mock import Mock
+
 import pytest
+from fastapi import FastAPI
 from httpx import AsyncClient
-from pytest_mock import MockerFixture
 
-from src.web.app import Token, User
-from tests.factories import UserFactory
-
-
-@pytest.fixture(scope="module")
-def user() -> User:
-    return UserFactory.build()
+from src.web.routes.login import get_login_manager
 
 
 @pytest.mark.asyncio
 async def test_login_endpoint_success(
-    api_client: AsyncClient, mocker: MockerFixture, user: User
+    app: FastAPI,
+    api_client: AsyncClient,
 ) -> None:
-    mocker.patch("src.web.app.authenticate_user", return_value=user)
-    mocker.patch.object(Token, "produce", return_value="success")
-    response = await api_client.post("/login", data=user.model_dump())
-    assert response.status_code == 200
+    login_mock = Mock()
+    login_mock.authenticate_user.return_value = "success"
+    app.dependency_overrides[get_login_manager] = login_mock
+    response = await api_client.post(
+        url="/api/login",
+        data={"username": "intis", "password": "password"},
+    )
     assert response.json() == "success"
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_login_endpoint_unauthorized(
-    api_client: AsyncClient, mocker: MockerFixture
+    app: FastAPI,
+    api_client: AsyncClient,
 ) -> None:
-    mocker.patch("src.web.app.authenticate_user", return_value=None)
+    login_mock = Mock()
+    login_mock.authenticate_user.return_value = None
+    app.dependency_overrides[get_login_manager] = login_mock
     response = await api_client.post(
-        "/login", data={"username": "intis", "password": "password"}
+        "/login",
+        data={"username": "intis", "password": "password"},
     )
-    assert response.status_code == 401
     assert response.json() == {"detail": "Incorrect username or password"}
-
-
-@pytest.mark.asyncio
-async def test_index_endpoint(api_client: AsyncClient) -> None:
-    response = await api_client.get("/")
-    assert response.json() == "test"
+    assert response.status_code == 401

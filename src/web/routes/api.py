@@ -1,10 +1,10 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 from httpx import AsyncClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_core import Url
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -28,8 +28,18 @@ class Schedule(BaseModel):
 
 
 class CalendarsQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     from_date: date | None = None
     to_date: date | None = None
+
+
+class FilterParams(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    limit: int = Field(100, gt=0, le=100)
+    offset: int = Field(0, ge=0)
+    order_by: Literal["created_at", "updated_at"] = "created_at"
+    tags: list[str] = []
 
 
 @router.post("/import-url")
@@ -67,13 +77,13 @@ async def import_calendar(
 async def get_calendars(
     session: Annotated[AsyncSession, Depends(db_manager)],
     user: Annotated[User, Depends(login_manager)],
-    filter: Annotated[CalendarsQuery, Query()],
+    filter_query: Annotated[CalendarsQuery, Query],
 ) -> Schedule:
     apartments = await Apartment.list(
-        session, user.id, filter.from_date, filter.to_date
+        session, user.id, filter_query.from_date, filter_query.to_date
     )
     calendars, start_date, end_date = make_schedule_from_apartments(
-        apartments, filter.from_date, filter.to_date
+        apartments, filter_query.from_date, filter_query.to_date
     )
     return Schedule(calendars=calendars, start_date=start_date, end_date=end_date)
 

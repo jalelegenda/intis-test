@@ -2,7 +2,7 @@
 
 run-dev:
 	poetry run uvicorn src.web.app:app --reload
-
+ 
 test:
 	poetry run pytest -vv -s
 
