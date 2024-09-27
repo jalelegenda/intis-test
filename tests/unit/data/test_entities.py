@@ -1,10 +1,7 @@
-import asyncio
 from datetime import date
 from typing import cast
-from unittest.mock import Mock
 
 import pytest
-from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.data.entity import Apartment, Booking, DayInfo
@@ -94,37 +91,6 @@ def overlapping_bookings_2() -> list[Booking]:
     ]
 
 
-@pytest.mark.asyncio
-async def test_prepare_apartment_when_exists(fake_session: FakeSession) -> None:
-    mock = Mock()
-    future: asyncio.Future[None] = asyncio.Future()
-    future.set_result(None)
-    mock.delete_own_bookings = Mock(return_value=future)
-    result = await Apartment.prepare(
-        cast(AsyncSession, fake_session(return_=mock)), 10, "user_id"
-    )
-    assert mock == result
-    mock.delete_own_bookings.assert_called_once_with(fake_session)
-    assert fake_session.refreshed == mock
-
-
-@pytest.mark.asyncio
-async def test_prepare_apartment_when_no_apartment(
-    fake_session: FakeSession[Apartment], mocker: MockerFixture
-) -> None:
-    my_apartment = ApartmentFactory.build()
-    new = Mock(return_value=my_apartment)
-    mocker.patch.object(Apartment, "__new__", new)
-    apartment = await Apartment.prepare(
-        cast(AsyncSession, fake_session(return_=None)), 10, "user_id"
-    )
-    new.assert_called_once_with(
-        Apartment, id=Apartment.make_id("user_id", 10), number=10, user_id="user_id"
-    )
-    assert my_apartment == apartment
-    assert fake_session.add_args[-1] == my_apartment
-
-
 def test_determine_best_cleaning_with_no_deadline_on_either() -> None:
     booking = Booking(
         start_date=date(2020, 5, 1),
@@ -138,7 +104,8 @@ def test_determine_best_cleaning_with_no_deadline_on_either() -> None:
             apartment_id="22",
         ),
     )
-    day_info = Apartment.determine_best_cleaning_date(booking, overlapping)
+    apartment = ApartmentFactory.build(bookings=[booking])
+    day_info = apartment.determine_best_cleaning_date(booking, overlapping)
     assert day_info
     assert day_info.num_of_bookings == 1
     assert day_info.date == date(2020, 5, 3)
@@ -158,7 +125,8 @@ def test_determine_best_cleaning_with_one_overlapping() -> None:
             apartment_id="22",
         ),
     )
-    day_info = Apartment.determine_best_cleaning_date(booking, overlapping)
+    apartment = ApartmentFactory.build(bookings=[booking])
+    day_info = apartment.determine_best_cleaning_date(booking, overlapping)
     assert day_info
     assert day_info.num_of_bookings == 1
     assert day_info.date == date(2020, 5, 3)
@@ -170,7 +138,8 @@ def test_determine_best_cleaning_without_overlapping() -> None:
         end_date=date(2020, 5, 3),
         apartment_id="100",
     )
-    day_info = Apartment.determine_best_cleaning_date(booking, tuple())
+    apartment = ApartmentFactory.build(bookings=[booking])
+    day_info = apartment.determine_best_cleaning_date(booking, tuple())
     assert not day_info
 
 
@@ -182,7 +151,8 @@ def test_determine_best_cleaning_without_deadline(
         end_date=date(2020, 5, 3),
         apartment_id="100",
     )
-    day_info = Apartment.determine_best_cleaning_date(
+    apartment = ApartmentFactory.build(bookings=[booking])
+    day_info = apartment.determine_best_cleaning_date(
         booking, tuple(overlapping_bookings_2)
     )
     assert day_info
@@ -200,7 +170,8 @@ def test_determine_best_cleaning_date(
         cleaning_deadline=date(2020, 5, 15),
         apartment_id="100",
     )
-    day_info = Apartment.determine_best_cleaning_date(
+    apartment = ApartmentFactory.build(bookings=[booking])
+    day_info = apartment.determine_best_cleaning_date(
         booking, tuple(overlapping_bookings_1)
     )
     assert day_info

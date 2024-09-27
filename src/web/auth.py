@@ -23,12 +23,6 @@ class Token(BaseModel):
     username: str
 
 
-class UserDoesNotExistError(HTTPException): ...
-
-
-class TokenDecodeFailure(HTTPException): ...
-
-
 class LoginManager:
     SCHEME: ClassVar = HTTPBearer()
     ALGORITHM: ClassVar = "HS256"
@@ -75,11 +69,10 @@ class LoginManager:
         try:
             decoded_token = self.decode_token(token)
         except jwt.InvalidTokenError:
-            raise TokenDecodeFailure(detail="Cannot process token", **exception)
+            raise HTTPException(detail="Cannot process token", **exception)
         user = await User.get_by_username(session, decoded_token.username)
         if not user:
-            print("no user")
-            raise UserDoesNotExistError(detail="User does not exist", **exception)
+            raise HTTPException(detail="User does not exist", **exception)
         return user
 
     async def authenticator(
@@ -87,7 +80,7 @@ class LoginManager:
         request: Request,
         session: Annotated[AsyncSession, Depends(db_manager)],
     ):
-        exception = HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+        exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
         token = request.cookies.get("access_token")
         if not token:
             raise exception

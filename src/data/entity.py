@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime
-from typing import NamedTuple, Self, Sequence, Union, cast
+from typing import Generator, NamedTuple, Self, Sequence, Union, cast
 
 from cuid2 import Cuid
 from dateutil.rrule import DAILY, rrule
@@ -30,11 +30,11 @@ class DayInfo(NamedTuple):
         return len(self.bookings) > 0
 
 
-def timezoned() -> datetime:
+def timezoned(nullable: bool = False) -> datetime:
     return cast(
         datetime,
         Field(
-            sa_column=Column(DateTime(timezone=True), nullable=False),
+            sa_column=Column(DateTime(timezone=True), nullable=nullable),
             default=datetime.now(UTC),
         ),
     )
@@ -72,7 +72,7 @@ class Booking(SQLModel, table=True):
     start_date: date
     end_date: date
     cleaning_deadline: date | None = None
-    cleaning_date: date | None = None
+    cleaning_date: date | None = Field(default=None, nullable=False)
     guest_name: str | None = None
     created_at: datetime = timezoned()
     updated_at: datetime = timezoned()
@@ -83,25 +83,29 @@ class Booking(SQLModel, table=True):
     async def get_overlapping_bookings(
         self, session: AsyncSession, apartment_id: str
     ) -> Sequence["Booking"]:
+        print(self.start_date)
+        print(self.end_date)
         return (
-            await session.exec(
-                select(Booking)
-                .join(Apartment)
-                .where(
-                    self.start_date >= Booking.end_date
-                    and self.end_date < Booking.start_date
-                    and Apartment.id == apartment_id
+            (
+                await session.exec(
+                    select(Booking)
+                    .join(Apartment)
+                    .where(self.start_date <= Booking.end_date)
+                    .where(self.end_date > Booking.start_date)
+                    .where(Apartment.id != apartment_id)
+                    .with_for_update()
                 )
-                .with_for_update()
             )
-        ).all()
+            .unique()
+            .all()
+        )
 
 
 class Apartment(SQLModel, table=True):
-    id: str = Field(primary_key=True)
+    id: str | None = Field(primary_key=True, default=None)
     number: int
-    description: str | None = None
-    updated_at: datetime = timezoned()
+    created_at: datetime = timezoned()
+    updated_at: datetime | None = timezoned(nullable=True)
 
     user_id: str = Field(foreign_key="user.id")
     user: User = Relationship(back_populates="apartments")
@@ -122,77 +126,58 @@ class Apartment(SQLModel, table=True):
             .where(cls.id == cls.make_id(user_id, number))
             .order_by(Booking.start_date)  # type: ignore[arg-type]
         )
-        return apartment.one_or_none()
+        return apartment.unique().one_or_none()
 
     @classmethod
-    async def prepare(
-        cls,
-        session: AsyncSession,
-        number: int,
-        user_id: str,
+    async def create(
+        cls, session: AsyncSession, number: int | str, user_id: str
     ) -> Self:
-        apartment = (
-            (
-                await session.exec(
-                    select(cls)
-                    .join(Booking)
-                    .options(contains_eager(cls.bookings))  # type: ignore[arg-type]
-                    .where(cls.id == cls.make_id(user_id, number))
-                )
-            )
-            .unique()
-            .one_or_none()
+        apartment = cls(
+            id=cls.make_id(user_id, number),
+            number=int(number),
+            user_id=user_id,
+            updated_at=None,
         )
-        if not apartment:
-            apartment = cls(
-                id=cls.make_id(user_id, number), number=number, user_id=user_id
-            )
-            session.add(apartment)
-        else:
-            await apartment.delete_own_bookings(session)
-            await session.refresh(apartment)
+        apartment.id = cls.make_id(user_id, number)
+        session.add(apartment)
         return apartment
+
+    async def prepare(
+        self,
+        session: AsyncSession,
+    ) -> Self:
+        await self.delete_own_bookings(session)
+        await session.refresh(self)
+        return self
 
     async def set_schedule(
         self, session: AsyncSession, bookings: list[BookingValue]
     ) -> None:
-        # TODO: Can be broken down into two functions; one iterates, other determines date for single booking
         for booking in bookings:
             new_booking = Booking(**booking.model_dump(), apartment=self)
             overlapping = tuple(
-                await new_booking.get_overlapping_bookings(session, self.id)
+                await new_booking.get_overlapping_bookings(session, cast(str, self.id))
             )
+            print(overlapping)
             best = self.determine_best_cleaning_date(new_booking, overlapping)
             self.assign_cleaning_date(session, new_booking, best)
+        self.updated_at = datetime.now(tz=UTC)
 
-    @staticmethod
     def determine_best_cleaning_date(
-        booking: Booking, overlapping: tuple[Booking, ...]
+        self, booking: Booking, overlapping: tuple[Booking, ...]
     ) -> DayInfo | None:
         best: DayInfo | None = None
         if not overlapping:
             return best
-        deadlines = [
-            o.cleaning_deadline for o in overlapping if o.cleaning_deadline is not None
-        ]
-        furthest_deadline = None
-        if deadlines:
-            furthest_deadline = max(deadlines)
+        deadline = self.get_furthest_deadline(overlapping)
+        end_date = self.get_furthest_end_date_generator(overlapping, booking)
         for ddate in rrule(
             DAILY,
             dtstart=booking.end_date,
             until=(
                 booking.cleaning_deadline
-                or furthest_deadline
-                or max(
-                    (
-                        o.end_date
-                        for o in (
-                            *overlapping,
-                            booking,
-                        )  # leave this to minimize performance hit
-                    )
-                )  # fallback to latest checkout
+                or deadline
+                or max(end_date)  # fallback to latest checkout
             ),
         ):
             day = ddate.date()
@@ -201,6 +186,7 @@ class Apartment(SQLModel, table=True):
                 for b in overlapping
                 if b.end_date <= day <= (b.cleaning_deadline or date(3000, 1, 1))
             }
+
             day_info = DayInfo(
                 len(bookings_vacant_on_ddate), day, bookings_vacant_on_ddate
             )
@@ -208,6 +194,29 @@ class Apartment(SQLModel, table=True):
                 best = day_info
 
         return best
+
+    @staticmethod
+    def get_furthest_deadline(overlapping: tuple[Booking, ...]) -> date | None:
+        deadlines: list[date] = [
+            o.cleaning_deadline for o in overlapping if o.cleaning_deadline is not None
+        ]
+        furthest_deadline = None
+        if deadlines:
+            furthest_deadline = max(deadlines)
+        return furthest_deadline
+
+    @staticmethod
+    def get_furthest_end_date_generator(
+        overlapping: tuple[Booking, ...],
+        booking: Booking,
+    ) -> Generator[date, None, None]:
+        return (
+            o.end_date
+            for o in (
+                *overlapping,
+                booking,
+            )  # leave this to minimize performance hit
+        )
 
     @staticmethod
     def assign_cleaning_date(
@@ -245,6 +254,6 @@ class Apartment(SQLModel, table=True):
         return list(result.unique().all())
 
     async def delete_own_bookings(self, session: AsyncSession) -> None:
-        await session.exec(  # type: ignore[no-overload]
+        await session.exec(  # type: ignore[call-overload]
             delete(Booking).where(Booking.apartment_id == self.id)  # type: ignore[arg-type]
         )

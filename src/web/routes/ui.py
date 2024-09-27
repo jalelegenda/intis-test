@@ -64,7 +64,6 @@ async def register(
     session: Annotated[AsyncSession, Depends(db_manager)],
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> RedirectResponse:
-    print("oh no")
     user = await User.get_by_username(session, form.username)
     if user:
         raise HTTPException(

@@ -15,10 +15,6 @@
             color: #333;
             text-align: center;
         }
-        h2 {
-            color: #008CBA;
-            margin-top: 30px;
-        }
         .table-container {
             background-color: white;
             border-radius: 5px;
@@ -36,7 +32,7 @@
             border-bottom: 1px solid #ddd;
         }
         th {
-            background-color: #4CAF50;
+            background-color: #90D07B;
             color: white;
         }
         tr:nth-child(even) {
@@ -52,42 +48,71 @@
             font-size: 0.9em;
         }
         .checkin {
-            background-color: #4CAF50;
+            background-color: #90D07B;
             color: white;
         }
         .checkout {
-            background-color: #f44336;
+            background-color: #7EB8CE;
             color: white;
         }
+        .cleaning {
+            background-color: #C98AB6;
+            color: white;
+        }
+        .occupied {
+            background-color: #EA6365;
+            color: white;
+        }
+        .
     </style>
 </head>
 <body>
     <h1>Apartment Schedules</h1>
-    
-    {% for apartment in apartments %}
-    <h2>Apartment {{ apartment.apartment_no }}</h2>
+
     <div class="table-container">
         <table>
-            <tr>
-                <th>Date</th>
-                <th>Status</th>
-            </tr>
-            {% for date, status in apartment.schedule.items() %}
-            <tr>
-                <td>{{ date }}</td>
-                <td>
-                    {% if status %}
-                        {% for item in status %}
-                            <span class="status {{ item.lower() }}">{{ item }}</span>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    {% for apartment in apartments %}
+                        <th>Apartment {{ apartment.number }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {# Collect all unique dates from the schedules of all apartments #}
+                {% set all_dates = [] %}
+                {% for apartment in apartments %}
+                    {% for date in apartment.schedule.keys() %}
+                        {% if date not in all_dates %}
+                            {% set _ = all_dates.append(date) %}
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+                
+                {# Sort the dates to ensure correct chronological order #}
+                {% set all_dates = all_dates|sort %}
+                
+                {# Loop over each unique date #}
+                {% for date in all_dates %}
+                    <tr>
+                        <td>{{ date }}</td>
+                        {% for apartment in apartments %}
+                            <td>
+                                {% set status = apartment.schedule.get(date) %}
+                                {% if status %}
+                                    {% for item in status %}
+                                        <span class="status {{ item.lower() }}">{{ item }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
                         {% endfor %}
-                    {% else %}
-                        -
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
         </table>
     </div>
-    {% endfor %}
 </body>
 </html>

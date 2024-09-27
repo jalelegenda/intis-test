@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import date
 from itertools import zip_longest
+from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Self
 
 from ics import Calendar as iCalendar
@@ -25,10 +26,12 @@ class Calendar:
     @classmethod
     def parse(
         cls,
-        file: bytes | BinaryIO,
+        file: bytes | SpooledTemporaryFile | BinaryIO,
         filename: str | None,
     ) -> Self:
-        if isinstance(file, BinaryIO):
+        if isinstance(file, SpooledTemporaryFile):
+            file = bytes(file.read())
+        elif isinstance(file, BinaryIO):
             file = file.read()
         icalendar = cls.get_icalendar(file)
 
@@ -45,7 +48,6 @@ class Calendar:
         calendar = iCalendar()
         for booking in apartment.bookings:
             event = Event()
-            event.uid = booking.id
             event.description = booking.guest_name
             event.begin = Arrow.fromdate(booking.start_date)
             event.end = Arrow.fromdate(booking.end_date)
