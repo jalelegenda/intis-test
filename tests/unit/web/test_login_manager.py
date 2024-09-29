@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 from fastapi import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.web.auth import LoginManager, User, UserDoesNotExistError
+from src.web.auth import LoginManager, User
 from tests.conftest import FakeSession
 
 
@@ -104,7 +104,7 @@ async def test_call_method_nonexistent_user(
     token = login_manager.produce_token("user_id", "nonexistentuser")
     fake_session(return_=None)
 
-    with pytest.raises(UserDoesNotExistError) as exc_info:
+    with pytest.raises(HTTPException) as exc_info:
         await login_manager(cast(AsyncSession, fake_session), token)
 
     assert exc_info.value.status_code == 401

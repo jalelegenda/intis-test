@@ -40,13 +40,16 @@ class FakeSession(Generic[T]):
         self.query = None
         self.refreshed = None
         self.add_args = []
+        self.return_ = None
 
     def __call__(self, *, return_: T | None) -> Self:
         self.return_ = return_
         return self
 
-    def add(self, arg: Any) -> None:
-        self.add_args.append(arg)
+    def add(self, arg: Any = None) -> list:
+        if arg is not None:
+            self.add_args.append(arg)
+        return self.add_args
 
     async def exec(self, query: SelectOfScalar) -> Self:
         self.query = query

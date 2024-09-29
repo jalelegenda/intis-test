@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from itertools import dropwhile, takewhile
 from typing import Generator, NamedTuple, Self, Sequence, Union, cast
 
 from cuid2 import Cuid
@@ -16,6 +17,7 @@ from sqlmodel import (
 )
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.data.value import ApartmentStatus
 from src.data.value import Booking as BookingValue
 
 CUID = Cuid(length=32)
@@ -71,7 +73,7 @@ class Booking(SQLModel, table=True):
     id: str = Field(primary_key=True, default_factory=CUID.generate)
     start_date: date
     end_date: date
-    cleaning_deadline: date | None = None
+    cleaning_deadline: date | None = Field(default=None, nullable=False)
     cleaning_date: date | None = Field(default=None, nullable=False)
     guest_name: str | None = None
     created_at: datetime = timezoned()
@@ -83,8 +85,6 @@ class Booking(SQLModel, table=True):
     async def get_overlapping_bookings(
         self, session: AsyncSession, apartment_id: str
     ) -> Sequence["Booking"]:
-        print(self.start_date)
-        print(self.end_date)
         return (
             (
                 await session.exec(
@@ -138,9 +138,55 @@ class Apartment(SQLModel, table=True):
             user_id=user_id,
             updated_at=None,
         )
-        apartment.id = cls.make_id(user_id, number)
         session.add(apartment)
         return apartment
+
+    def status(self, dt: date) -> list[ApartmentStatus]:
+        overlapping_bookings = list(
+            takewhile(
+                lambda b: b.start_date <= dt <= b.cleaning_date,  # type: ignore[operator]
+                dropwhile(
+                    lambda b: (b.start_date > dt or b.cleaning_date < dt),
+                    self.bookings,  # type: ignore[operator]
+                ),
+            )
+        )
+        # a maximum of two bookings can overlap and
+        # if they do it means a checkin, a checkout and a cleaning
+        # is must happen that day
+        if not overlapping_bookings:
+            return [ApartmentStatus.VACANT]
+
+        if len(overlapping_bookings) == 2:
+            if (
+                overlapping_bookings[0].end_date
+                == overlapping_bookings[0].cleaning_date
+            ):
+                return [
+                    ApartmentStatus.CHECKOUT,
+                    ApartmentStatus.CLEANING,
+                    ApartmentStatus.CHECKIN,
+                ]
+            return [
+                ApartmentStatus.CLEANING,
+                ApartmentStatus.CHECKIN,
+            ]
+
+        if (
+            overlapping_bookings[0].end_date == dt
+            and overlapping_bookings[0].cleaning_date == dt
+        ):
+            return [ApartmentStatus.CHECKOUT, ApartmentStatus.CLEANING]
+        if overlapping_bookings[0].start_date == dt:
+            return [ApartmentStatus.CHECKIN]
+        if overlapping_bookings[0].end_date == dt:
+            return [ApartmentStatus.CHECKOUT]
+        if overlapping_bookings[0].cleaning_date == dt:
+            return [ApartmentStatus.CLEANING]
+        if overlapping_bookings[0].start_date < dt < overlapping_bookings[0].end_date:
+            return [ApartmentStatus.OCCUPIED]
+        else:
+            return [ApartmentStatus.VACANT]
 
     async def prepare(
         self,
@@ -158,7 +204,6 @@ class Apartment(SQLModel, table=True):
             overlapping = tuple(
                 await new_booking.get_overlapping_bookings(session, cast(str, self.id))
             )
-            print(overlapping)
             best = self.determine_best_cleaning_date(new_booking, overlapping)
             self.assign_cleaning_date(session, new_booking, best)
         self.updated_at = datetime.now(tz=UTC)

@@ -1,11 +1,19 @@
 FROM python:3.12-slim-bookworm AS base
-ENV POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_VERSION=1.7.1 \
-    POETRY_NO_INTERGRATION=1 \
-    POETRY_HOME=/opt/poetry \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     \
-    VIRTUAL_ENV=/venv
-ENV PATH="$POETRY_HOME/bin:$VIRTUAL_ENV/bin:$PATH"
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_VERSION=1.7.1 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_HOME=/opt/poetry \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    \
+    PYSETUP_PATH="/opt/pysetup" \
+    VENV_PATH="/opt/pysetup/.venv"
+ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 WORKDIR /home
 COPY poetry.lock .
 COPY pyproject.toml .

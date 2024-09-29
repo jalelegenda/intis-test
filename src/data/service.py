@@ -1,30 +1,11 @@
-from collections import defaultdict
-from datetime import date, timedelta
-from enum import auto
+from datetime import date, datetime
 from itertools import chain
 from typing import Generator, cast
 
-from pydantic import BaseModel
-from strenum import StrEnum
+from dateutil.rrule import DAILY, rrule
 
 from src.data.entity import Apartment, Booking
-
-
-class ApartmentStatus(StrEnum):
-    CHECKIN = auto()
-    CHECKOUT = auto()
-    CLEANING = auto()
-    OCCUPIED = auto()
-    VACANT = auto()
-
-
-class ApartmentValue(BaseModel):
-    number: int
-    schedule: dict[date, set[ApartmentStatus]]
-
-
-class ApartmentList(BaseModel):
-    apartments: list[ApartmentValue]
+from src.data.value import ApartmentList, ApartmentValue
 
 
 def make_schedule_from_apartments(
@@ -39,20 +20,29 @@ def make_schedule_from_apartments(
 
     full_schedule: list[ApartmentValue] = []
     for apartment in apartments:
-        apartment_schedule: defaultdict[date, set[ApartmentStatus]] = defaultdict(set)
-        day = start_date
-        sorted_bookings = list(sorted(apartment.bookings, key=lambda b: b.start_date))
-        while sorted_bookings:
-            booking = sorted_bookings.pop(0)
-            day = _handle_start_date(booking.start_date, day, apartment_schedule)
-            day = _handle_end_date(booking.end_date, day, apartment_schedule)
-            day = _handle_cleaning_date(booking.cleaning_date, day, apartment_schedule)
-            _handle_remaining_vacancy(
-                day, apartment_schedule, end_date, sorted_bookings
-            )
+        # MORE PERFORMANT:
+        # day = start_date
+        # sorted_bookings = list(sorted(apartment.bookings, key=lambda b: b.start_date))
+        # while sorted_bookings:
+        #     booking = sorted_bookings.pop(0)
+        #     day = _handle_start_date(booking.start_date, day, apartment_schedule)
+        #     day = _handle_end_date(booking.end_date, day, apartment_schedule)
+        #     day = _handle_cleaning_date(booking.cleaning_date, day, apartment_schedule)
+        #     _handle_remaining_vacancy(
+        #         day, apartment_schedule, end_date, sorted_bookings
+        #     )
+
+        # MORE READABLE:
+        print(apartment.user_id)
+        if apartment.bookings:
+            print(apartment.bookings[0])
+        apartment_schedule = {
+            dt.date(): apartment.status(dt.date())
+            for dt in rrule(DAILY, dtstart=start_date, until=end_date)
+        }
 
         full_schedule.append(
-            ApartmentValue(number=apartment.number, schedule=dict(apartment_schedule))
+            ApartmentValue(number=apartment.number, schedule=apartment_schedule)
         )
     return ApartmentList(apartments=full_schedule), start_date, end_date
 
@@ -62,7 +52,10 @@ def _determine_minimal_date(
 ) -> date:
     if from_date:
         return from_date
-    return min(booking.start_date for booking in bookings)
+    try:
+        return min(booking.start_date for booking in bookings)
+    except ValueError:
+        return datetime.now().date()
 
 
 def _determine_maximal_date(
@@ -70,7 +63,20 @@ def _determine_maximal_date(
 ) -> date:
     if to_date:
         return to_date
-    return max((booking.cleaning_deadline or booking.end_date) for booking in bookings)
+    try:
+        return max(
+            (
+                booking.cleaning_deadline
+                or (
+                    booking.end_date
+                    if booking.end_date == booking.cleaning_date
+                    else cast(date, booking.cleaning_date)
+                )
+            )
+            for booking in bookings
+        )
+    except ValueError:
+        return datetime.now().date()
 
 
 def _get_bookings_generator(
@@ -84,62 +90,62 @@ def _get_bookings_generator(
     )
 
 
-def _handle_start_date(start_date: date, day: date, apartment_schedule: dict) -> date:
-    if day == start_date:
-        apartment_schedule[day].add(ApartmentStatus.CHECKIN)
-        day = progress(day)
-    elif day < start_date:
-        while day < start_date:
-            apartment_schedule[day].add(ApartmentStatus.VACANT)
-            day = progress(day)
-        apartment_schedule[day].add(ApartmentStatus.CHECKIN)
-        day = progress(day)
-    return day
-
-
-def _handle_end_date(end_date: date, day: date, apartment_schedule: dict) -> date:
-    while day < end_date:
-        apartment_schedule[day].add(ApartmentStatus.OCCUPIED)
-        day = progress(day)
-    apartment_schedule[day].add(ApartmentStatus.CHECKOUT)
-    return day
-
-
-def _handle_cleaning_date(
-    cleaning_date: date | None,
-    day: date,
-    apartment_schedule: dict,
-) -> date:
-    if day != cleaning_date:
-        day = progress(day)
-    while day < cast(date, cleaning_date):
-        apartment_schedule[day].add(ApartmentStatus.VACANT)
-        day = progress(day)
-    apartment_schedule[day].add(ApartmentStatus.CLEANING)
-    return day
-
-
-def _handle_remaining_vacancy(
-    day: date,
-    apartment_schedule: dict,
-    end_date: date,
-    sorted_bookings: list[Booking],
-) -> date:
-    forward_to = end_date
-
-    if sorted_bookings:
-        forward_to = sorted_bookings[0].start_date
-
-        if day == forward_to:
-            apartment_schedule[day].add(ApartmentStatus.CHECKIN)
-            day = progress(day)
-
-    day = progress(day)
-    while day < forward_to:
-        apartment_schedule[day].add(ApartmentStatus.VACANT)
-        day = progress(day)
-    return day
-
-
-def progress(day: date) -> date:
-    return day + timedelta(days=1)
+# def _handle_start_date(start_date: date, day: date, apartment_schedule: dict) -> date:
+#     if day == start_date:
+#         apartment_schedule[day].add(ApartmentStatus.CHECKIN)
+#         day = progress(day)
+#     elif day < start_date:
+#         while day < start_date:
+#             apartment_schedule[day].add(ApartmentStatus.VACANT)
+#             day = progress(day)
+#         apartment_schedule[day].add(ApartmentStatus.CHECKIN)
+#         day = progress(day)
+#     return day
+#
+#
+# def _handle_end_date(end_date: date, day: date, apartment_schedule: dict) -> date:
+#     while day < end_date:
+#         apartment_schedule[day].add(ApartmentStatus.OCCUPIED)
+#         day = progress(day)
+#     apartment_schedule[day].add(ApartmentStatus.CHECKOUT)
+#     return day
+#
+#
+# def _handle_cleaning_date(
+#     cleaning_date: date | None,
+#     day: date,
+#     apartment_schedule: dict,
+# ) -> date:
+#     if day != cleaning_date:
+#         day = progress(day)
+#     while day < cast(date, cleaning_date):
+#         apartment_schedule[day].add(ApartmentStatus.VACANT)
+#         day = progress(day)
+#     apartment_schedule[day].add(ApartmentStatus.CLEANING)
+#     return day
+#
+#
+# def _handle_remaining_vacancy(
+#     day: date,
+#     apartment_schedule: dict,
+#     end_date: date,
+#     sorted_bookings: list[Booking],
+# ) -> date:
+#     forward_to = end_date
+#
+#     if sorted_bookings:
+#         forward_to = sorted_bookings[0].start_date
+#
+#         if day == forward_to:
+#             apartment_schedule[day].add(ApartmentStatus.CHECKIN)
+#             day = progress(day)
+#
+#     day = progress(day)
+#     while day < forward_to:
+#         apartment_schedule[day].add(ApartmentStatus.VACANT)
+#         day = progress(day)
+#     return day
+#
+#
+# def progress(day: date) -> date:
+#     return day + timedelta(days=1)

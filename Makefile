@@ -4,7 +4,16 @@ run-dev:
 	poetry run uvicorn src.web.app:app --reload
  
 test:
-	poetry run pytest -vv -s
+	@if test -n "$(NAME)" && test -n "$(MODS)"; then \
+		echo "Error! Can't specify both NAME and PATH"; \
+	elif test -n "$(NAME)"; then \
+		poetry run pytest -vv -s -k "$(NAME)"; \
+	elif test -n "$(MODS)"; then \
+		echo "$(MODS)"; \
+		poetry run pytest -vv -s "$(MODS)"; \
+	else \
+		poetry run coverage run -m pytest -vv -s; \
+	fi
 
 migrate:
 	poetry run alembic check || poetry run alembic upgrade head
@@ -19,4 +28,7 @@ revision:
 downgrade:
 	poetry run alembic downgrade -1
 
-push_db: revision migrate
+update_db: revision migrate
+
+coverage:
+	poetry run coverage report -m

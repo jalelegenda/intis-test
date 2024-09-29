@@ -6,12 +6,6 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from strenum import StrEnum
 
 
-class ApartmentState(StrEnum):
-    OCCUPIED = auto()
-    VACANT = auto()
-    EXCHANGE = auto()  # briefly vacant, must be cleaned
-
-
 class BaseValue(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -34,6 +28,18 @@ class Booking(BaseValue):
         return self
 
 
-class State(BaseValue):
-    date: date
-    state: ApartmentState
+class ApartmentStatus(StrEnum):
+    CHECKIN = auto()
+    CHECKOUT = auto()
+    CLEANING = auto()
+    OCCUPIED = auto()
+    VACANT = auto()
+
+
+class ApartmentValue(BaseModel):
+    number: int
+    schedule: dict[date, list[ApartmentStatus]]
+
+
+class ApartmentList(BaseModel):
+    apartments: list[ApartmentValue]
