@@ -7,10 +7,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from pydantic_core import Url
 from sqlmodel.ext.asyncio.session import AsyncSession
-from starlette.status import HTTP_503_SERVICE_UNAVAILABLE
 
 from src.data.entity import Apartment, User
-from src.data.service import ApartmentList, make_schedule_from_apartments
+from src.data.service import ApartmentList, make_schedule
 from src.web.auth import login_manager
 from src.web.dependencies import db_manager, http_manager
 from src.web.parser import Calendar
@@ -41,24 +40,27 @@ async def import_calendar_from_url(
     payload: FileURL,
 ) -> JSONResponse:
     try:
-        response = await client.head(url=str(payload.url))
+        response = await client.head(str(payload.url))
         if "Last-Modified" in response.headers:
             last_modified = response.headers["Last-Modified"]
             apartment_no = Calendar.get_apartment_no(payload.url.path)
             apartment = await Apartment.get(session, apartment_no, user.id)
             if not apartment:
                 apartment = await Apartment.create(session, apartment_no, user.id)
-                response = await client.get(str(payload.url))
             if not apartment.updated_at or (
                 apartment.updated_at
                 < datetime.strptime(last_modified, "%a, %d %b %Y %H:%M:%S GMT").replace(
                     tzinfo=UTC
                 )
             ):
+                response = await client.get(str(payload.url))
                 calendar = Calendar.parse(response.content, str(payload.url))
                 await apartment.set_schedule(session, calendar.bookings)
-    except (httpx.RequestError, httpx.NetworkError, httpx.ConnectError):
-        raise HTTPException(status_code=HTTP_503_SERVICE_UNAVAILABLE)
+    except (httpx.RequestError, httpx.NetworkError, httpx.ConnectError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Error trying to fetch provided URL",
+        ) from e
     return JSONResponse(content="success", status_code=200)
 
 
@@ -83,10 +85,8 @@ async def get_calendars(
     user: Annotated[User, Depends(login_manager)],
     filter_query: Annotated[CalendarsQuery, Depends()],
 ) -> Schedule:
-    apartments = await Apartment.list(
-        session, user.id, filter_query.from_date, filter_query.to_date
-    )
-    calendars, start_date, end_date = make_schedule_from_apartments(
+    apartments = await Apartment.list(session, user.id)
+    calendars, start_date, end_date = make_schedule(
         apartments, filter_query.from_date, filter_query.to_date
     )
     return Schedule(calendars=calendars, start_date=start_date, end_date=end_date)

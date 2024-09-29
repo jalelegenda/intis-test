@@ -1,7 +1,10 @@
 .PHONY = run-dev
 
 run-dev:
-	poetry run uvicorn src.web.app:app --reload
+	docker compose up app --build
+
+stop:
+	docker compose stop
  
 test:
 	@if test -n "$(NAME)" && test -n "$(MODS)"; then \
@@ -12,7 +15,7 @@ test:
 		echo "$(MODS)"; \
 		poetry run pytest -vv -s "$(MODS)"; \
 	else \
-		poetry run coverage run -m pytest -vv -s; \
+		docker compose up test; \
 	fi
 
 migrate:

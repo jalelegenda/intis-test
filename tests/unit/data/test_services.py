@@ -1,12 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from src.data.entity import Apartment, Booking
-from src.data.service import (
-    ApartmentList,
-    make_schedule_from_apartments,
-)
+from src.data.service import ApartmentList, make_schedule
 from src.data.value import ApartmentStatus
 
 
@@ -58,7 +55,7 @@ def apartment_list(
 
 
 def test_make_schedule_empty_apartment_list() -> None:
-    result = make_schedule_from_apartments([])
+    result = make_schedule([])
     assert isinstance(result, tuple)
     assert isinstance(result[0], ApartmentList)
     assert result[0].apartments == []
@@ -67,19 +64,31 @@ def test_make_schedule_empty_apartment_list() -> None:
 
 
 def test_make_schedule_no_bookings(apartment_no_bookings) -> None:
-    result = make_schedule_from_apartments([apartment_no_bookings])
+    result, start, end = make_schedule([apartment_no_bookings])
 
-    assert isinstance(result, tuple)
-    assert isinstance(result[0], ApartmentList)
-    assert len(result[0].apartments) == 1
-    assert result[0].apartments[0].number == apartment_no_bookings.number
-    assert result[0].apartments[0].schedule == {}  # No bookings, no schedule
+    now = datetime.now().date()
+    assert result.apartments[0].schedule[now] == [ApartmentStatus.VACANT]
+    assert len(result.apartments[0].schedule) == 1
+    assert start == now
+    assert end == now
+
+
+def test_make_schedule_no_bookings_bound(apartment_no_bookings) -> None:
+    result, start, end = make_schedule(
+        [apartment_no_bookings],
+        date(2022, 10, 11),
+        date(2022, 10, 20),
+    )
+
+    for status in result.apartments[0].schedule.values():
+        assert status == [ApartmentStatus.VACANT]
+    assert len(result.apartments[0].schedule) == 10
+    assert start == date(2022, 10, 11)
+    assert end == date(2022, 10, 20)
 
 
 def test_make_schedule_single_booking(apartment_with_single_booking: Apartment) -> None:
-    apartments_list, start, end = make_schedule_from_apartments(
-        [apartment_with_single_booking]
-    )
+    apartments_list, start, end = make_schedule([apartment_with_single_booking])
 
     assert start == date(2024, 9, 1)
     assert end == date(2024, 9, 6)
@@ -95,9 +104,7 @@ def test_make_schedule_single_booking(apartment_with_single_booking: Apartment) 
 def test_make_schedule_multiple_bookings(
     apartment_with_multiple_bookings: Apartment,
 ) -> None:
-    apartments_list, start, end = make_schedule_from_apartments(
-        [apartment_with_multiple_bookings]
-    )
+    apartments_list, start, end = make_schedule([apartment_with_multiple_bookings])
     assert start == date(2024, 9, 2)
     assert end == date(2024, 9, 12)
     schedule = apartments_list.apartments[0].schedule
@@ -123,9 +130,7 @@ def test_make_schedule_bound(apartment_list: list[Apartment]) -> None:
     from_date = date(2024, 9, 1)
     to_date = date(2024, 9, 30)
 
-    apartments_list, start, end = make_schedule_from_apartments(
-        apartment_list, from_date, to_date
-    )
+    apartments_list, start, end = make_schedule(apartment_list, from_date, to_date)
     assert start == from_date
     assert end == to_date
     schedule = apartments_list.apartments[0].schedule
@@ -199,7 +204,7 @@ def test_make_schedule_bound(apartment_list: list[Apartment]) -> None:
 
 
 def test_make_schedule_unbound(apartment_list: list[Apartment]) -> None:
-    apartments_list, start, end = make_schedule_from_apartments(apartment_list)
+    apartments_list, start, end = make_schedule(apartment_list)
     assert start == date(2024, 9, 1)
     assert end == date(2024, 9, 12)
     schedule = apartments_list.apartments[0].schedule

@@ -4,6 +4,7 @@ from itertools import zip_longest
 from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Self
 
+from fastapi import HTTPException, status
 from ics import Calendar as iCalendar
 from ics import Event
 from ics.event import Arrow
@@ -12,7 +13,7 @@ from src.data.entity import Apartment
 from src.data.value import Booking
 
 
-class ParserError(Exception): ...
+class ParserError(HTTPException): ...
 
 
 @dataclass
@@ -71,7 +72,10 @@ class Calendar:
 
     @staticmethod
     def get_apartment_no(filename: str | None) -> int:
-        error = ParserError("Cannot parse apartment number")
+        error = ParserError(
+            detail="Cannot parse apartment number",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
         if not filename:
             raise error
 

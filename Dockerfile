@@ -28,27 +28,15 @@ RUN --mount=type=cache,target=/root/.cache \
 RUN --mount=type=cache,target=/root/.cache \
     poetry install --no-root --only=main
 
-
-FROM base AS migrations
-WORKDIR /home
-COPY migrations ./migrations
-COPY migrate.py .
-
-
 FROM base AS dev
 WORKDIR /home
-COPY src ./src
-
-
-FROM dev AS test
-WORKDIR /home
-COPY tests ./tests
 RUN \
     apt update \
     && apt install --no-install-recommends -y \
         libpq-dev \
     && apt clean
 
-RUN \
-    --mount=type=cache,target=/root/.cache \
-    poetry install --no-root --only=dev
+RUN poetry install
+COPY tests ./tests
+COPY migrations ./migrations
+COPY alembic.ini .

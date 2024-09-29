@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlmodel.ext.asyncio.session import AsyncSession
 from httpx import AsyncClient, Timeout
 
-from src.web.dependencies import DbManager, HttpManager, DB_STRING
+from src.web.dependencies import DbManager, HttpManager
+from src.settings import settings
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ def mock_async_client() -> AsyncMock:
 async def test_db_manager_initialization() -> None:
     with patch("src.web.dependencies.create_async_engine") as mock_create_engine:
         db_manager = DbManager()
-        mock_create_engine.assert_called_once_with(DB_STRING)
+        mock_create_engine.assert_called_once_with(settings.db_dsn)
         assert db_manager.session is None
 
 

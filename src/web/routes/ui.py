@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.data.entity import Apartment, User
-from src.data.service import make_schedule_from_apartments
+from src.data.service import make_schedule
 from src.web.auth import LoginManager, get_login_manager, login_manager
 from src.web.dependencies import db_manager
 
@@ -22,7 +22,7 @@ async def index(
     session: Annotated[AsyncSession, Depends(db_manager)],
 ):
     apartments = await Apartment.list(session, user.id)
-    apartments_view, min_date, max_date = make_schedule_from_apartments(apartments)
+    apartments_view, min_date, max_date = make_schedule(apartments)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -72,4 +72,4 @@ async def register(
             headers={"WWW-Authenticate": "Bearer"},
         )
     user = await User.create(session, form.username, login.hash_password(form.password))
-    return RedirectResponse("/signin")
+    return RedirectResponse("/signin", status_code=status.HTTP_303_SEE_OTHER)

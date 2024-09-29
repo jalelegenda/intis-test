@@ -5,12 +5,12 @@ from fastapi import HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.web.auth import LoginManager, User
-from tests.conftest import FakeSession
+from tests.unit.conftest import FakeSession
 
 
 @pytest.fixture
 def login_manager():
-    return LoginManager(secret="test_secret", token_expiration="1h")
+    return LoginManager()
 
 
 @pytest.fixture

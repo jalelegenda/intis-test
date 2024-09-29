@@ -6,6 +6,7 @@ from cuid2 import Cuid
 from dateutil.rrule import DAILY, rrule
 from sqlalchemy.orm import contains_eager
 from sqlmodel import (
+    CheckConstraint,
     Column,
     DateTime,
     Field,
@@ -68,12 +69,14 @@ class User(SQLModel, table=True):
 class Booking(SQLModel, table=True):
     __table_args__ = (
         Index("booking_start_date_end_date_idx", "start_date", "end_date"),
+        CheckConstraint("cleaning_date >= end_date"),
+        CheckConstraint("cleaning_deadline >= cleaning_date"),
     )
 
     id: str = Field(primary_key=True, default_factory=CUID.generate)
     start_date: date
     end_date: date
-    cleaning_deadline: date | None = Field(default=None, nullable=False)
+    cleaning_deadline: date | None = Field(default=None)
     cleaning_date: date | None = Field(default=None, nullable=False)
     guest_name: str | None = None
     created_at: datetime = timezoned()
@@ -144,10 +147,10 @@ class Apartment(SQLModel, table=True):
     def status(self, dt: date) -> list[ApartmentStatus]:
         overlapping_bookings = list(
             takewhile(
-                lambda b: b.start_date <= dt <= b.cleaning_date,  # type: ignore[operator]
+                lambda b: b.start_date <= dt <= cast(date, b.cleaning_date),
                 dropwhile(
-                    lambda b: (b.start_date > dt or b.cleaning_date < dt),
-                    self.bookings,  # type: ignore[operator]
+                    lambda b: (b.start_date > dt or cast(date, b.cleaning_date) < dt),
+                    self.bookings,
                 ),
             )
         )
@@ -185,8 +188,7 @@ class Apartment(SQLModel, table=True):
             return [ApartmentStatus.CLEANING]
         if overlapping_bookings[0].start_date < dt < overlapping_bookings[0].end_date:
             return [ApartmentStatus.OCCUPIED]
-        else:
-            return [ApartmentStatus.VACANT]
+        return [ApartmentStatus.VACANT]
 
     async def prepare(
         self,
@@ -279,17 +281,10 @@ class Apartment(SQLModel, table=True):
     async def list(
         session: AsyncSession,
         user_id: str,
-        from_date: date | None = None,
-        to_date: date | None = None,
     ) -> list["Apartment"]:
         statement = (
             select(Apartment).join(Booking).options(contains_eager(Apartment.bookings))  # type: ignore[arg-type]
         )
-
-        if from_date:
-            statement = statement.where(Booking.end_date >= from_date)
-        if to_date:
-            statement = statement.where(Booking.start_date < to_date)
 
         statement = statement.where(Apartment.user_id == user_id).order_by(
             Booking.start_date  # type: ignore[arg-type]

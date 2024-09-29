@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.data.entity import Apartment, Booking, DayInfo, User
 from src.data.value import ApartmentStatus
-from tests.conftest import FakeSession
+from tests.unit.conftest import FakeSession
 from tests.factories import (
     ApartmentFactory,
     BookingFactory,
@@ -100,40 +100,6 @@ def overlapping_bookings_2() -> list[Booking]:
     ]
 
 
-@pytest.fixture(scope="function")
-def bookings() -> list[Booking]:
-    return [
-        Booking(
-            start_date=date(2020, 6, 10),
-            end_date=date(2020, 6, 12),
-            cleaning_deadline=date(2020, 6, 12),
-            cleaning_date=date(2020, 6, 12),
-            apartment_id="4",
-        ),
-        Booking(
-            start_date=date(2020, 6, 12),
-            end_date=date(2020, 6, 14),
-            cleaning_deadline=date(2020, 6, 20),
-            cleaning_date=date(2020, 6, 14),
-            apartment_id="4",
-        ),
-        Booking(
-            start_date=date(2020, 6, 20),
-            end_date=date(2020, 6, 25),
-            cleaning_deadline=date(2020, 6, 28),
-            cleaning_date=date(2020, 6, 28),
-            apartment_id="4",
-        ),
-        Booking(
-            start_date=date(2020, 6, 28),
-            end_date=date(2020, 7, 5),
-            cleaning_deadline=date(2020, 7, 15),
-            cleaning_date=date(2020, 7, 10),
-            apartment_id="4",
-        ),
-    ]
-
-
 @pytest.mark.asyncio
 async def test_create_user(fake_session: FakeSession, mocker: MockerFixture) -> None:
     mock_user = UserFactory.build()
@@ -142,7 +108,7 @@ async def test_create_user(fake_session: FakeSession, mocker: MockerFixture) -> 
     user = await User.create(fake_session, mock_user.username, mock_user.password)  # type: ignore[arg-type]
     assert user == mock_user
     assert fake_session.add() == [mock_user]
-    assert mock_new.assert_called_once_with(
+    mock_new.assert_called_once_with(
         User, username=mock_user.username, password=mock_user.password
     )
 

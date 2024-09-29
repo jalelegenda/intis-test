@@ -2,16 +2,13 @@ from typing import Annotated, ClassVar
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import (
-    HTTPBearer,
-    OAuth2PasswordBearer,
-)
+from fastapi.security import HTTPBearer, OAuth2PasswordBearer
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-import src.settings as settings
 from src.data.entity import User
+from src.settings import settings
 from src.web.dependencies import db_manager
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -25,19 +22,20 @@ class Token(BaseModel):
 
 class LoginManager:
     SCHEME: ClassVar = HTTPBearer()
-    ALGORITHM: ClassVar = "HS256"
 
-    def __init__(self, secret: str, token_expiration: str):
-        self.secret = secret
-        self.token_expiration = token_expiration
-
-    def decode_token(self, encoded: str) -> Token:
-        token_decoded = jwt.decode(encoded, self.secret, algorithms=[self.ALGORITHM])
+    @staticmethod
+    def decode_token(encoded: str) -> Token:
+        token_decoded = jwt.decode(
+            encoded, settings.token_secret, algorithms=[settings.algorithm]
+        )
         return Token.model_validate(token_decoded)
 
-    def produce_token(self, user_id: str, username: str) -> str:
+    @staticmethod
+    def produce_token(user_id: str, username: str) -> str:
         token = Token(sub=user_id, username=username)
-        return jwt.encode(token.model_dump(), self.secret, algorithm=self.ALGORITHM)
+        return jwt.encode(
+            token.model_dump(), settings.token_secret, algorithm=settings.algorithm
+        )
 
     async def authenticate_user(
         self,
@@ -51,10 +49,12 @@ class LoginManager:
                 return None
         return user
 
-    def verify_password(self, password: str, hashed: str) -> bool:
+    @staticmethod
+    def verify_password(password: str, hashed: str) -> bool:
         return pwd_context.verify(password, hashed)
 
-    def hash_password(self, password: str) -> str:
+    @staticmethod
+    def hash_password(password: str) -> str:
         return pwd_context.hash(password)
 
     async def __call__(
@@ -90,10 +90,7 @@ class LoginManager:
         return await self(session, encoded)
 
 
-login_manager = LoginManager(
-    secret=settings.TOKEN_SECRET,
-    token_expiration=settings.TOKEN_EXPIRATION,
-)
+login_manager = LoginManager()
 
 
 def get_login_manager() -> LoginManager:
